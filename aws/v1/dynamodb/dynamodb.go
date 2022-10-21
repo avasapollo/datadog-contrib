@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// assertion the interface Payer to MongoPayer
+//go:generate mockgen --build_flags=--mod=mod -destination=mocks/dynamodbapi_mock.go -package=mocks github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface DynamoDBAPI
 var _ dynamodbiface.DynamoDBAPI = (*DynamoDB)(nil)
 
 type config struct {
@@ -40,7 +40,6 @@ func New(client dynamodbiface.DynamoDBAPI, opts ...Option) *DynamoDB {
 }
 
 func (d *DynamoDB) BatchExecuteStatement(input *dynamodb.BatchExecuteStatementInput) (*dynamodb.BatchExecuteStatementOutput, error) {
-
 	//TODO implement me
 	panic("implement me")
 }
@@ -646,25 +645,24 @@ func (p *tagsParams) Table() string {
 	return ""
 }
 
-func (d *DynamoDB) setTags(span tracer.Span, params *tagsParams) tracer.Span {
-	span.SetTag(ext.ServiceName, d.config.ServiceName)
-	span.SetTag(ext.DBType, "nosql")
-	span.SetTag(ext.DBName, "dynamodb")
-	span.SetTag(ext.ResourceName, params.command)
+func (d *DynamoDB) setTags(span tracer.Span, params *tagsParams) []tracer.StartSpanOption {
+	resourceName := params.command
 	if params.table != nil {
-		span.SetTag(ext.ResourceName, fmt.Sprintf("%s %s", params.command, params.Table()))
+		resourceName = fmt.Sprintf("%s %s", params.command, params.Table())
 	}
-	span.SetOperationName(fmt.Sprintf("dynamodb.%s", params.command))
-	span.SetTag("db.operation", params.command)
-	span.SetTag("db.dynamodb.table", params.Table())
-	return span
+
+	return []tracer.StartSpanOption{
+		tracer.ServiceName(d.config.ServiceName),
+		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.DBType, "nosql"),
+		tracer.Tag(ext.DBName, "dynamodb"),
+		tracer.Tag("db.operation", params.command),
+		tracer.Tag("db.dynamodb.table", params.Table()),
+	}
 }
 
 func (d *DynamoDB) PutItemWithContext(ctx aws.Context, input *dynamodb.PutItemInput, option ...request.Option) (*dynamodb.PutItemOutput, error) {
-	span, ok := tracer.SpanFromContext(ctx)
-	if !ok {
-		return d.client.PutItemWithContext(ctx, input, option...)
-	}
+	span, ctx := tracer.StartSpanFromContext(ctx, "dynamodb.PutItem", d.se)
 	defer span.Finish()
 
 	params := &tagsParams{
@@ -673,7 +671,7 @@ func (d *DynamoDB) PutItemWithContext(ctx aws.Context, input *dynamodb.PutItemIn
 	}
 	span = d.setTags(span, params)
 
-	res, err := d.client.PutItemWithContext(ctx, input)
+	res, err := d.client.PutItemWithContext(ctx, input, option...)
 	if err != nil {
 		span.SetTag(ext.Error, err)
 		return nil, err

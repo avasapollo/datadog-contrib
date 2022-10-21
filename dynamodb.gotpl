@@ -1,0 +1,47 @@
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/kelseyhightower/envconfig"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+)
+
+var _ dynamodbiface.DynamoDBAPI = (*DynamoWrapper)(nil)
+
+type config struct {
+	ServiceName string `envconfig:"DD_SERVICE"`
+}
+
+type Option func(opts *config)
+
+type DynamoDB struct {
+	config *config
+	client dynamodbiface.DynamoDBAPI
+}
+
+func New(client dynamodbiface.DynamoDBAPI, opts ...Option) *DynamoDB {
+	c := new(config)
+	_ = envconfig.Process("", c)
+	for _, opt := range opts {
+		opt(c)
+	}
+	return &DynamoDB{
+		config: c,
+		client: client,
+	}
+}
+
+{{range .Methods}}
+
+func(d *DynamoDB)  {{ .Name }}({{ .GetParams }}) ({{ .GetResults }}){
+
+}
+
+{{ end }}

@@ -1,48 +1,25 @@
 package dynamodb
 
 import (
-	"reflect"
+	"context"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/avasapollo/datadog-contrib/aws/v1/dynamodb/mocks"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
-	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func TestDynamoDB_PutItemWithContext(t *testing.T) {
+	tracer.Start(tracer.WithDebugMode(true))
+	defer tracer.Stop()
 
-	tracer.new
-	type fields struct {
-		client dynamodbiface.DynamoDBAPI
-	}
-	type args struct {
-		ctx    aws.Context
-		input  *dynamodb.PutItemInput
-		option []request.Option
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    *dynamodb.PutItemOutput
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := &DynamoDB{
-				client: tt.fields.client,
-			}
-			got, err := d.PutItemWithContext(tt.args.ctx, tt.args.input, tt.args.option...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("PutItemWithContext() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("PutItemWithContext() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	ctrl := gomock.NewController(t)
+	mockDBApi := mocks.NewMockDynamoDBAPI(ctrl)
+	mockDBApi.EXPECT().PutItemWithContext(gomock.Any(), gomock.Any()).Return(nil, nil)
+	d := New(mockDBApi)
+	input := &dynamodb.PutItemInput{}
+	_, err := d.PutItemWithContext(context.Background(), input)
+	require.NoError(t, err)
 }
