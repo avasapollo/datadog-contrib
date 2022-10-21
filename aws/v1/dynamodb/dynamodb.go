@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	"github.com/kelseyhightower/envconfig"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -15,12 +16,25 @@ import (
 // assertion the interface Payer to MongoPayer
 var _ dynamodbiface.DynamoDBAPI = (*DynamoDB)(nil)
 
+type config struct {
+	ServiceName string `envconfig:"DD_SERVICE"`
+}
+
+type Option func(opts *config)
+
 type DynamoDB struct {
+	config *config
 	client dynamodbiface.DynamoDBAPI
 }
 
-func New(client dynamodbiface.DynamoDBAPI) *DynamoDB {
+func New(client dynamodbiface.DynamoDBAPI, opts ...Option) *DynamoDB {
+	c := new(config)
+	_ = envconfig.Process("", c)
+	for _, opt := range opts {
+		opt(c)
+	}
 	return &DynamoDB{
+		config: c,
 		client: client,
 	}
 }
@@ -633,6 +647,7 @@ func (p *tagsParams) Table() string {
 }
 
 func (d *DynamoDB) setTags(span tracer.Span, params *tagsParams) tracer.Span {
+	span.SetTag(ext.ServiceName, d.config.ServiceName)
 	span.SetTag(ext.DBType, "nosql")
 	span.SetTag(ext.DBName, "dynamodb")
 	span.SetTag(ext.ResourceName, params.command)
