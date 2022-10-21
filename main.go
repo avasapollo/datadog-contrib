@@ -21,6 +21,10 @@ type Method struct {
 	Output []*Param
 }
 
+func (m *Method) WithContext() bool {
+	return strings.Contains(m.Name, "WithContext")
+}
+
 func (m *Method) GetParams() string {
 	var inpt []string
 	for _, p := range m.Input {
@@ -52,12 +56,16 @@ func main() {
 	}
 	list := iterInterfaces(file)
 	inter := manipulate(list[0])
+	f, err := os.Create("aws/v1/dynamodb/dynamodb.go")
+	if err != nil {
+		panic(err)
+	}
 
 	tmpl, err := template.ParseFiles("dynamodb.gotpl")
 	if err != nil {
 		panic(err)
 	}
-	err = tmpl.Execute(os.Stdout, inter)
+	err = tmpl.Execute(f, inter)
 	if err != nil {
 		panic(err)
 	}
@@ -93,7 +101,7 @@ func manipulate(n *namedInterface) *Inter {
 			// opts
 			if selector, ok := pa.Type.(*ast.Ellipsis); ok {
 				name = "opts"
-				tp = selector.Elt.(*ast.SelectorExpr).X.(*ast.Ident).Name + "." + selector.Elt.(*ast.SelectorExpr).Sel.Name
+				tp = "..." + selector.Elt.(*ast.SelectorExpr).X.(*ast.Ident).Name + "." + selector.Elt.(*ast.SelectorExpr).Sel.Name
 			}
 
 			p := &Param{

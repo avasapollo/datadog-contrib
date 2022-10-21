@@ -13,7 +13,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-var _ dynamodbiface.DynamoDBAPI = (*DynamoWrapper)(nil)
+var _ dynamodbiface.DynamoDBAPI = (*DynamoDB)(nil)
 
 type config struct {
 	ServiceName string `envconfig:"DD_SERVICE"`
@@ -38,10 +38,70 @@ func New(client dynamodbiface.DynamoDBAPI, opts ...Option) *DynamoDB {
 	}
 }
 
-{{range .Methods}}
-
-func(d *DynamoDB)  {{ .Name }}({{ .GetParams }}) ({{ .GetResults }}){
-
+type tagsParams struct{
+    command string
+    table   *string
 }
 
+func(p *tagsParams) Table() string{
+    if p.table == nil {
+        return ""
+    }
+    return *p.table
+}
+
+func (d *DynamoDB) tags(params *tagsParams) []tracer.StartSpanOption {
+	resourceName := params.command
+	if params.table != nil {
+		resourceName = fmt.Sprintf("%s %s", params.command, params.Table())
+	}
+
+	return []tracer.StartSpanOption{
+		tracer.ServiceName(d.config.ServiceName),
+		tracer.ResourceName(resourceName),
+		tracer.Tag(ext.DBType, "nosql"),
+		tracer.Tag(ext.DBName, "dynamodb"),
+		tracer.Tag("db.operation", params.command),
+		tracer.Tag("db.dynamodb.table", params.Table()),
+	}
+}
+
+{{range .Methods}}
+{{if .WithContext }}
+func(d *DynamoDB)  {{ .Name }}({{ .GetParams }}) ({{ .GetResults }}){
+	params := &tagsParams{
+		command: "{{ .Name }}",
+		table:   in.TableName,
+	}
+
+	span, ctx := tracer.StartSpanFromContext(ctx, "dynamodb.{{.Name}}", d.tags(params)...)
+	defer span.Finish()
+
+	res, err := d.client.{{ .Name }}(ctx, in, opts...)
+	if err != nil {
+		span.SetTag(ext.Error, err)
+		return nil, err
+	}
+	return res, nil
+}
+
+{{else}}
+func(d *DynamoDB)  {{ .Name }}({{ .GetParams }}) ({{ .GetResults }}){
+	params := &tagsParams{
+		command: "{{ .Name }}",
+		table:   in.TableName,
+	}
+
+	span, _ := tracer.StartSpanFromContext(context.Background(), "dynamodb.{{ .Name }}", d.tags(params)...)
+	defer span.Finish()
+
+	res, err := d.client.{{ .Name }}(in)
+	if err != nil {
+		span.SetTag(ext.Error, err)
+		return nil, err
+	}
+	return res, nil
+}
+
+{{end}}
 {{ end }}
